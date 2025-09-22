@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
@@ -205,3 +206,12 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+=======
+__pycache__/
+.env
+.venv/
+*.pyc
+.DS_Store
+>>>>>>> ffe4ffe (chore: scaffold Diplomacy MCP backend (FastAPI), Neon schema, Dockerfile)
+
+# merged from remote
