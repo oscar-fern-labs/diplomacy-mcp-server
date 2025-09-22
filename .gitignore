@@ -215,3 +215,5 @@ __pycache__/
 >>>>>>> ffe4ffe (chore: scaffold Diplomacy MCP backend (FastAPI), Neon schema, Dockerfile)
 
 # merged from remote
+server.pid
+server.log
