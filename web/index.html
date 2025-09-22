@@ -1,0 +1,51 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Diplomacy MCP UI</title>
+  <link rel="stylesheet" href="/ui/style.css" />
+</head>
+<body>
+  <div class="container">
+    <h1>Diplomacy MCP</h1>
+    <section>
+      <h2>Connect</h2>
+      <button id="btn-connect">Connect WS</button>
+      <span id="ws-status">disconnected</span>
+    </section>
+    <section>
+      <h2>Create / Join</h2>
+      <div>
+        <button id="btn-create">Create Game</button>
+        <label>or Game Code: <input id="game-code" placeholder="code" /></label>
+      </div>
+      <div>
+        <label>Name: <input id="player-name" placeholder="Your name" /></label>
+        <label>Power: <input id="player-power" placeholder="England" /></label>
+        <button id="btn-join">Join</button>
+      </div>
+      <div>Current Code: <span id="current-code"></span></div>
+    </section>
+    <section>
+      <h2>Board</h2>
+      <pre id="board"></pre>
+      <button id="btn-refresh-board">Refresh Board</button>
+      <button id="btn-ready">Toggle Ready</button>
+      <div>
+        <h3>Phases</h3>
+        <ul id="phases"></ul>
+      </div>
+    </section>
+    <section>
+      <h2>Messages</h2>
+      <div class="row">
+        <input id="chat-msg" placeholder="Type message" />
+        <button id="btn-send">Send</button>
+      </div>
+      <ul id="messages"></ul>
+    </section>
+  </div>
+  <script src="/ui/app.js"></script>
+</body>
+</html>

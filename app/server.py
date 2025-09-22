@@ -31,7 +31,7 @@ async def health():
 @router.get("/games/{code}/board")
 async def get_board(code: str):
     pool = await get_pool()
-    game = await pool.fetchrow("SELECT * FROM games WHERE code=", code)
+    game = await pool.fetchrow("SELECT * FROM games WHERE code=$1", code)
     if not game:
         raise HTTPException(status_code=404, detail="Game not found")
     return {"game": dict(game)}
@@ -44,14 +44,14 @@ async def stream_board(code: str):
         pool = await get_pool()
         last_idx = -1
         while True:
-            game = await pool.fetchrow("SELECT id, phase_index FROM games WHERE code=", code)
+            game = await pool.fetchrow("SELECT id, phase_index FROM games WHERE code=$1", code)
             if not game:
                 yield {"event": "end", "data": "not found"}
                 return
             if game["phase_index"] != last_idx:
                 last_idx = game["phase_index"]
                 phase = await pool.fetchrow(
-                    "SELECT board_state, season, year, phase_type FROM phases WHERE game_id= AND index_in_game=",
+                    "SELECT board_state, season, year, phase_type FROM phases WHERE game_id=$1 AND index_in_game=$2",
                     game["id"], last_idx
                 )
                 if phase:
@@ -96,11 +96,11 @@ async def mcp_ws(ws: WebSocket):
                     async with pool.acquire() as conn:
                         async with conn.transaction():
                             game_row = await conn.fetchrow(
-                                "INSERT INTO games(code, name, map, phase_index, current_phase, status) VALUES(,,,,,) RETURNING *",
+                                "INSERT INTO games(code, name, map, phase_index, current_phase, status) VALUES($1,$2,$3,$4,$5,$6) RETURNING *",
                                 code, name, mapname, 0, board, "active"
                             )
                             await conn.execute(
-                                "INSERT INTO phases(game_id, season, year, phase_type, index_in_game, board_state) VALUES(,,,,,)",
+                                "INSERT INTO phases(game_id, season, year, phase_type, index_in_game, board_state) VALUES($1,$2,$3,$4,$5,$6)",
                                 game_row["id"], board["season"], board["year"], board["phase_type"], 0, board
                             )
                     await ws.send_text(json.dumps(make_response({"code": code}, mid)))
@@ -110,14 +110,14 @@ async def mcp_ws(ws: WebSocket):
                     name = params["name"]
                     power = params.get("power")
                     pool = await get_pool()
-                    game = await pool.fetchrow("SELECT * FROM games WHERE code=", code)
+                    game = await pool.fetchrow("SELECT * FROM games WHERE code=$1", code)
                     if not game:
                         await ws.send_text(json.dumps(make_error(-32000, "Game not found", mid)))
                         continue
                     token = secrets.token_hex(16)
                     try:
                         row = await pool.fetchrow(
-                            "INSERT INTO players(game_id, name, power, token) VALUES(,,,) RETURNING id",
+                            "INSERT INTO players(game_id, name, power, token) VALUES($1,$2,$3,$4) RETURNING id",
                             game["id"], name, power, token
                         )
                     except asyncpg.UniqueViolationError:
@@ -137,9 +137,9 @@ async def mcp_ws(ws: WebSocket):
                     recipients = params.get("to", ["global"])
                     sender_name = params.get("from")
                     pool = await get_pool()
-                    game = await pool.fetchrow("SELECT id FROM games WHERE code=", game_code)
+                    game = await pool.fetchrow("SELECT id FROM games WHERE code=$1", game_code)
                     await pool.execute(
-                        "INSERT INTO messages(game_id, sender_player_id, recipients, content) VALUES(,,,)",
+                        "INSERT INTO messages(game_id, sender_player_id, recipients, content) VALUES($1,$2,$3,$4)",
                         game["id"], player_id, recipients, content
                     )
                     await broadcast(game_code, make_notification("event", {"type": "chat_message", "from": sender_name, "to": recipients, "message": content}))
@@ -148,7 +148,7 @@ async def mcp_ws(ws: WebSocket):
                 elif method == "board.state":
                     code = params.get("code") or game_code
                     pool = await get_pool()
-                    game = await pool.fetchrow("SELECT current_phase FROM games WHERE code=", code)
+                    game = await pool.fetchrow("SELECT current_phase FROM games WHERE code=$1", code)
                     if not game:
                         await ws.send_text(json.dumps(make_error(-32000, "Game not found", mid)))
                         continue
@@ -162,14 +162,14 @@ async def mcp_ws(ws: WebSocket):
                     pool = await get_pool()
                     async with pool.acquire() as conn:
                         async with conn.transaction():
-                            g = await conn.fetchrow("SELECT id, current_phase, phase_index FROM games WHERE code=", game_code)
+                            g = await conn.fetchrow("SELECT id, current_phase, phase_index FROM games WHERE code=$1", game_code)
                             phase = await conn.fetchrow(
-                                "SELECT id, orders FROM phases WHERE game_id= AND index_in_game=",
+                                "SELECT id, orders FROM phases WHERE game_id=$1 AND index_in_game=$2",
                                 g["id"], g["phase_index"]
                             )
                             new_orders = list(phase["orders"]) if phase and phase["orders"] else []
                             new_orders.append({"player_id": player_id, "orders": orders})
-                            await conn.execute("UPDATE phases SET orders= WHERE id=", new_orders, phase["id"])
+                            await conn.execute("UPDATE phases SET orders=$1 WHERE id=$2", new_orders, phase["id"])
                     await ws.send_text(json.dumps(make_response({"ok": True}, mid)))
 
                 elif method == "ready.set":
@@ -180,28 +180,28 @@ async def mcp_ws(ws: WebSocket):
                     pool = await get_pool()
                     async with pool.acquire() as conn:
                         async with conn.transaction():
-                            g = await conn.fetchrow("SELECT id, phase_index FROM games WHERE code=", game_code)
-                            await conn.execute("UPDATE players SET ready= WHERE id=", ready, player_id)
-                            all_ready = await conn.fetchval("SELECT bool_and(ready) FROM players WHERE game_id=", g["id"])
+                            g = await conn.fetchrow("SELECT id, phase_index FROM games WHERE code=$1", game_code)
+                            await conn.execute("UPDATE players SET ready=$1 WHERE id=$2", ready, player_id)
+                            all_ready = await conn.fetchval("SELECT bool_and(ready) FROM players WHERE game_id=$1", g["id"])
                             if all_ready:
                                 cur = await conn.fetchrow(
-                                    "SELECT board_state, season, year, phase_type FROM phases WHERE game_id= AND index_in_game=",
+                                    "SELECT board_state, season, year, phase_type FROM phases WHERE game_id=$1 AND index_in_game=$2",
                                     g["id"], g["phase_index"]
                                 )
                                 n_season, n_year, n_phase_type = next_phase(cur["season"], cur["year"], cur["phase_type"])
                                 next_board = dict(cur["board_state"])  # TODO: adjudication
                                 new_index = g["phase_index"] + 1
                                 await conn.execute(
-                                    "INSERT INTO phases(game_id, season, year, phase_type, index_in_game, board_state) VALUES(,,,,,)",
+                                    "INSERT INTO phases(game_id, season, year, phase_type, index_in_game, board_state) VALUES($1,$2,$3,$4,$5,$6)",
                                     g["id"], n_season, n_year, n_phase_type, new_index, next_board
                                 )
                                 await conn.execute(
-                                    "UPDATE games SET phase_index=, current_phase= WHERE id=",
+                                    "UPDATE games SET phase_index=$1, current_phase=$2 WHERE id=$3",
                                     new_index,
                                     {"season": n_season, "year": n_year, "phase_type": n_phase_type, "units": next_board.get("units", [])},
                                     g["id"]
                                 )
-                                await conn.execute("UPDATE players SET ready=false WHERE game_id=", g["id"])
+                                await conn.execute("UPDATE players SET ready=false WHERE game_id=$1", g["id"])
                                 await broadcast(game_code, make_notification("event", {"type": "phase_advanced", "season": n_season, "year": n_year, "phase_type": n_phase_type}))
                     await ws.send_text(json.dumps(make_response({"ok": True}, mid)))
 
@@ -217,3 +217,35 @@ async def mcp_ws(ws: WebSocket):
         if game_code and ws in connections.get(game_code, set()):
             connections[game_code].discard(ws)
         return
+
+@router.get("/games/{code}/messages")
+async def list_messages(code: str, limit: int = 200):
+    pool = await get_pool()
+    game = await pool.fetchrow("SELECT id FROM games WHERE code=$1", code)
+    if not game:
+        raise HTTPException(status_code=404, detail="Game not found")
+    rows = await pool.fetch(
+        """
+        SELECT m.id, m.content, m.created_at, m.recipients, p.name AS sender_name
+        FROM messages m
+        LEFT JOIN players p ON p.id = m.sender_player_id
+        WHERE m.game_id=$1
+        ORDER BY m.created_at ASC
+        LIMIT $2
+        """,
+        game["id"], limit,
+    )
+    return {"messages": [dict(r) for r in rows]}
+
+@router.get("/games/{code}/phases")
+async def list_phases(code: str):
+    pool = await get_pool()
+    game = await pool.fetchrow("SELECT id FROM games WHERE code=$1", code)
+    if not game:
+        raise HTTPException(status_code=404, detail="Game not found")
+    rows = await pool.fetch(
+        "SELECT season, year, phase_type, index_in_game FROM phases WHERE game_id=$1 ORDER BY index_in_game ASC",
+        game["id"],
+    )
+    return {"phases": [dict(r) for r in rows]}
+
